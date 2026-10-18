@@ -1,0 +1,27 @@
+{
+  "$schema": "https://unpkg.com/@novatv/sdk/schema/nova-plugin.schema.json",
+  "id": "es.novatv.pluto-tv",
+  "name": "Pluto TV",
+  "version": "1.0.0",
+  "api": 1,
+  "kind": ["provider"],
+  "main": "dist/index.js",
+  "icon": "icon.png",
+  "description": "Canales gratis y legales con anuncios: dibujos, anime, cine, series, MTV… con su guía.",
+  "author": { "name": "NOVA TV" },
+  "audience": "everyone",
+  "permissions": {
+    "network": ["*.pluto.tv"],
+    "channels": true,
+    "guide": true
+  },
+  "settings": [
+    {
+      "key": "animeInfantil",
+      "type": "toggle",
+      "label": "Anime en perfiles infantiles",
+      "help": "Dragon Ball, One Piece, Detective Conan… también en los perfiles infantiles (si permites Pluto TV para niños).",
+      "default": true
+    }
+  ]
+}
