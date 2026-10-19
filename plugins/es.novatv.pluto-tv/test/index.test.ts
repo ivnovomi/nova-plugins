@@ -80,14 +80,27 @@ test("el anime es infantil solo si la opción lo dice", async () => {
   nova.setSetting("animeInfantil", true);
 });
 
-test("la emisión va firmada y por el proxy; si Pluto la rechaza, sesión nueva", async () => {
-  const antes = sesiones;
+test("la emisión va sin firmar y por el proxy: el token no sale del plugin", async () => {
   const s = await nova.stream("bob1");
   assert.ok(s.type === "hls" && s.proxy);
-  assert.match(s.type === "hls" ? s.url : "", /\/channel\/bob1\/master\.m3u8\?appName=web&jwt=token-\d+/);
+  assert.equal(s.type === "hls" ? s.url : "", "https://stitcher.pluto.tv/v2/stitch/hls/channel/bob1/master.m3u8");
+});
+
+test("NOVA firma la maestra justo antes de pedirla; las demás listas, tal cual", async () => {
+  const antes = sesiones;
+  const maestra = await nova.sign("https://stitcher.pluto.tv/v2/stitch/hls/channel/bob1/master.m3u8");
+  assert.match(maestra.url, /\/master\.m3u8\?appName=web&jwt=token-\d+&masterJWTPassthrough=true$/);
   assert.equal(sesiones, antes, "reutiliza la sesión");
-  await nova.stream("bob1", { retry: true });
+  const variante = "https://stitcher.pluto.tv/v2/stitch/hls/channel/bob1/720p/playlist.m3u8?jwt=x";
+  assert.equal((await nova.sign(variante)).url, variante);
+  assert.deepEqual(nova.problems, []);
+});
+
+test("si Pluto rechaza la firma, sesión nueva", async () => {
+  const antes = sesiones;
+  const otra = await nova.sign("https://stitcher.pluto.tv/v2/stitch/hls/channel/bob1/master.m3u8", { retry: true });
   assert.equal(sesiones, antes + 1);
+  assert.match(otra.url, new RegExp(`jwt=token-${sesiones}&`));
 });
 
 test("la guía, en segundos y sin espacios de más", async () => {
@@ -103,9 +116,10 @@ test("la guía, en segundos y sin espacios de más", async () => {
   assert.deepEqual(nova.problems, []);
 });
 
-test("la sesión dura lo que dice Pluto", async () => {
+test("la sesión dura lo que dice Pluto: a mitad de un directo, la firma ya es la nueva", async () => {
   const antes = sesiones;
   nova.advance(8 * 3600);
-  await nova.stream("bob1");
+  const firmada = await nova.sign("https://stitcher.pluto.tv/v2/stitch/hls/channel/bob1/master.m3u8");
   assert.equal(sesiones, antes + 1);
+  assert.match(firmada.url, new RegExp(`jwt=token-${sesiones}&`));
 });

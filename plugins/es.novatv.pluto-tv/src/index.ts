@@ -40,6 +40,23 @@ interface Session {
 // En memoria: el plugin sigue vivo entre llamadas de NOVA.
 let session: Session | undefined;
 
+// ───────────────────────── Registro ─────────────────────────
+// Todo sale en Ajustes → Plugins → Pluto TV → Registro (y en la terminal con
+// `nova dev`). Nunca se escribe el token: las direcciones van sin su «?…».
+
+/** Milisegundos desde `t0`. */
+const ms = (t0: number) => `${Date.now() - t0} ms`;
+/** Una dirección sin lo que va tras «?» (ahí viajan los tokens). */
+const bare = (url: string) => url.split("?")[0];
+/** "12.3 KB" */
+const kb = (text: string) => `${(text.length / 1024).toFixed(1)} KB`;
+/** { a: 3, b: 1 } → "a 3 · b 1", de más a menos. */
+const tally = (counts: Map<string, number>) =>
+  [...counts.entries()]
+    .sort((a, b) => b[1] - a[1])
+    .map(([k, n]) => `${k} ${n}`)
+    .join(" · ");
+
 /** Un identificador de dispositivo anónimo, como el de una pestaña del navegador (se guarda para siempre). */
 function deviceId(): string {
   let id = storage.get<string>("deviceId");
@@ -55,6 +72,8 @@ function deviceId(): string {
 async function getSession(fresh = false): Promise<Session> {
   if (session && !fresh && Date.now() < session.expiresAt) return session;
 
+  const why = !session ? "la primera" : fresh ? "Pluto rechazó la anterior" : "la anterior caducó";
+  const t0 = Date.now();
   const query = [
     "appName=web",
     "appVersion=9.0.0",
@@ -66,10 +85,19 @@ async function getSession(fresh = false): Promise<Session> {
     "clientModelNumber=1.0.0",
     "serverSideAds=false",
   ].join("&");
-  const boot = await http.json<Boot>(`${BOOT}?${query}`, { headers: { "user-agent": UA } });
+  let boot: Boot;
+  try {
+    boot = await http.json<Boot>(`${BOOT}?${query}`, { headers: { "user-agent": UA } });
+  } catch (e) {
+    log.error(`sesión: boot.pluto.tv falló en ${ms(t0)}:`, String(e));
+    throw e;
+  }
 
   const stitcher = boot.servers?.stitcher;
-  if (!boot.sessionToken || !stitcher?.startsWith("https://")) throw new Error("Pluto TV no dio una sesión");
+  if (!boot.sessionToken || !stitcher?.startsWith("https://")) {
+    log.error("sesión: Pluto respondió sin token o sin servidor de emisión", { token: !!boot.sessionToken, stitcher: stitcher ?? null });
+    throw new Error("Pluto TV no dio una sesión");
+  }
   // Se renueva 10 minutos antes de que caduque.
   const seconds = Math.max(600, (boot.refreshInSec ?? 8 * 3600) - 600);
   session = {
@@ -79,19 +107,38 @@ async function getSession(fresh = false): Promise<Session> {
     region: boot.session?.activeRegion ?? "ES",
     expiresAt: Date.now() + seconds * 1000,
   };
+  log.info(
+    `sesión nueva (${why}) en ${ms(t0)}: región ${session.region}, servidor ${bare(stitcher)}, válida ${(seconds / 3600).toFixed(1)} h, ` +
+      `parámetros de emisión ${session.params ? `${session.params.split("&").length}` : "ninguno"}, dispositivo ${deviceId().slice(0, 8)}…`,
+  );
   return session;
 }
 
 /** GET a la API de Pluto con el token; si lo rechaza, una vez más con sesión nueva. */
 async function api<T>(path: string): Promise<T> {
+  const name = bare(path);
   const ask = async (fresh: boolean) => {
     const { token } = await getSession(fresh);
-    return http.request({ url: `${API}/${path}`, headers: { authorization: `Bearer ${token}`, "user-agent": UA } });
+    const t0 = Date.now();
+    const res = await http.request({ url: `${API}/${path}`, headers: { authorization: `Bearer ${token}`, "user-agent": UA } });
+    log.info(`API ${name} → HTTP ${res.status}, ${kb(res.body)}, ${ms(t0)}`);
+    return res;
   };
   let res = await ask(false);
-  if (res.status === 401 || res.status === 403) res = await ask(true);
-  if (res.status !== 200) throw new Error(`Pluto TV: HTTP ${res.status}`);
-  return JSON.parse(res.body) as T;
+  if (res.status === 401 || res.status === 403) {
+    log.warn(`API ${name}: Pluto rechazó la sesión (HTTP ${res.status}); se pide otra y se reintenta`);
+    res = await ask(true);
+  }
+  if (res.status !== 200) {
+    log.error(`API ${name}: HTTP ${res.status}; respuesta: ${res.body.slice(0, 200)}`);
+    throw new Error(`Pluto TV: HTTP ${res.status}`);
+  }
+  try {
+    return JSON.parse(res.body) as T;
+  } catch {
+    log.error(`API ${name}: la respuesta no es JSON (${kb(res.body)}): ${res.body.slice(0, 120)}`);
+    throw new Error(`Pluto TV: respuesta no válida de ${name}`);
+  }
 }
 
 // ───────────────────────── Categorías ─────────────────────────
@@ -149,11 +196,13 @@ export default defineProvider({
     refresh: "12h",
 
     async load() {
+      const t0 = Date.now();
       const { region } = await getSession();
       const [channels, categories] = await Promise.all([
         api<{ data: PlutoChannel[] }>("channels?channelIds=&offset=0&limit=1000&sort=number:asc"),
         api<{ data: PlutoCategory[] }>("categories"),
       ]);
+      log.info(`canales: Pluto da ${channels.data?.length ?? 0} canales y ${categories.data?.length ?? 0} categorías (región ${region})`);
 
       // Pluto da las categorías al revés: cada una con sus canales.
       const categoriesOf = new Map<string, string[]>();
@@ -161,14 +210,38 @@ export default defineProvider({
         for (const id of cat.channelIDs ?? []) categoriesOf.set(id, [...(categoriesOf.get(id) ?? []), cat.name]);
       }
 
+      const skipped = { office: [] as string[], notStitched: [] as string[], badId: [] as string[] };
+      const themesSeen = new Map<string, number>();
+      const groupsSeen = new Map<string, number>();
+      let noCategory = 0;
+      let noLogo = 0;
+      let outOfBlock = 0;
+      const animeKids = settings.get<boolean>("animeInfantil") ?? true;
+
       const list: Channel[] = [];
       for (const ch of channels.data) {
         // Canales internos de Pluto o que no se pueden emitir.
-        if (ch.plutoOfficeOnly || ch.isStitched === false || !/^[A-Za-z0-9]+$/.test(ch.id)) continue;
+        if (ch.plutoOfficeOnly) {
+          skipped.office.push(ch.name);
+          continue;
+        }
+        if (ch.isStitched === false) {
+          skipped.notStitched.push(ch.name);
+          continue;
+        }
+        if (!/^[A-Za-z0-9]+$/.test(ch.id)) {
+          skipped.badId.push(`${ch.name} (${ch.id})`);
+          continue;
+        }
         const names = categoriesOf.get(ch.id) ?? [];
+        if (!names.length) noCategory++;
         const real = names.filter((n) => !promo(n));
         const group = real[0] ?? names[0] ?? "Pluto TV";
         const themes = [...new Set((real.length ? real : [group]).map(theme))];
+        for (const t of themes) themesSeen.set(t, (themesSeen.get(t) ?? 0) + 1);
+        groupsSeen.set(group, (groupsSeen.get(group) ?? 0) + 1);
+        if (!ch.images?.some((i) => i.type === "colorLogoPNG")) noLogo++;
+        if (!(ch.number >= 1 && ch.number <= 500)) outOfBlock++;
         list.push({
           id: ch.id,
           name: ch.name.trim(),
@@ -180,16 +253,37 @@ export default defineProvider({
           country: region,
         });
       }
-      log.info(`${list.length} canales de Pluto TV (región ${region})`);
+      const total = skipped.office.length + skipped.notStitched.length + skipped.badId.length;
+      log.info(`canales: ${list.length} para NOVA en ${ms(t0)} · ${total} descartados (${skipped.office.length} internos, ${skipped.notStitched.length} sin emisión, ${skipped.badId.length} con id raro)`);
+      if (skipped.notStitched.length) log.warn("canales sin emisión:", skipped.notStitched.slice(0, 15).join(", "));
+      if (skipped.badId.length) log.warn("canales con id raro:", skipped.badId.slice(0, 15).join(", "));
+      log.info(`canales por tema: ${tally(themesSeen)} (anime ${animeKids ? "cuenta como infantil" : "no cuenta como infantil"})`);
+      log.info(`canales por grupo (${groupsSeen.size} grupos): ${tally(groupsSeen).split(" · ").slice(0, 15).join(" · ")}`);
+      if (noCategory || noLogo || outOfBlock) {
+        log.info(`canales: ${noCategory} sin categoría, ${noLogo} sin logo, ${outOfBlock} con un número que no cabe en el bloque (NOVA les da uno libre)`);
+      }
+      log.info("primeros canales:", list.slice(0, 5).map((c) => `${c.number ?? "—"} ${c.name} [${c.group}]`).join(" · "));
       return list;
     },
 
-    // La emisión se pide al sintonizar: va firmada con la sesión, que caduca.
+    // La emisión, sin firmar: una dirección corta que no caduca. Pluto solo deja
+    // leer sus listas a su web (CORS), así que van por el proxy de NOVA.
     async stream(id, ctx) {
-      // ctx.retry: Pluto rechazó la anterior (401/403) → sesión nueva.
       const s = await getSession(ctx.retry);
-      const url = `${s.stitcher}/v2/stitch/hls/channel/${id}/master.m3u8?${s.params}&jwt=${s.token}&masterJWTPassthrough=true`;
+      const url = `${s.stitcher}/v2/stitch/hls/channel/${id}/master.m3u8`;
+      log.info(`emisión «${id}»${ctx.retry ? " (reintento)" : ""}: ${url}`);
       return { type: "hls", url, proxy: true, headers: { "user-agent": UA } };
+    },
+
+    // Y la firma, justo antes de que NOVA descargue la lista maestra (la sesión
+    // del momento: si caducó, ya es la nueva). Las demás listas heredan el token
+    // de la maestra (masterJWTPassthrough) y van tal cual.
+    async sign(url, ctx) {
+      if (!url.endsWith("/master.m3u8")) return url;
+      // ctx.retry: Pluto rechazó la firma anterior (401/403) → sesión nueva.
+      const s = await getSession(ctx.retry);
+      if (ctx.retry) log.warn(`firma: Pluto rechazó la anterior; nueva sesión para ${bare(url)}`);
+      return `${url}?${s.params}&jwt=${s.token}&masterJWTPassthrough=true`;
     },
   },
 
@@ -198,16 +292,25 @@ export default defineProvider({
 
     async load(ids) {
       // Las próximas 6 horas, desde el principio de esta hora, en tandas de 60 canales.
+      const t0 = Date.now();
       const hour = new Date(Math.floor(Date.now() / 3_600_000) * 3_600_000).toISOString();
+      const batches = Math.ceil(ids.length / 60);
+      log.info(`guía: ${ids.length} canales en ${batches} tandas, desde ${hour}`);
       const programs: Record<string, Program[]> = {};
+      let failed = 0;
       for (let i = 0; i < ids.length; i += 60) {
         const batch = ids.slice(i, i + 60);
+        const n = i / 60 + 1;
+        const tb = Date.now();
         try {
           const json = await api<{ data: { channelId: string; timelines: PlutoTimeline[] }[] }>(
             `timelines?start=${hour}&channelIds=${batch.join(",")}&duration=360`,
           );
+          const count = json.data.reduce((sum, ch) => sum + (ch.timelines?.length ?? 0), 0);
+          const empty = batch.length - json.data.filter((ch) => ch.timelines?.length).length;
+          log.info(`guía: tanda ${n}/${batches} → ${json.data.length} canales, ${count} programas, ${empty} sin programas, ${ms(tb)}`);
           for (const ch of json.data) {
-            programs[ch.channelId] = ch.timelines.map((t) => ({
+            programs[ch.channelId] = (ch.timelines ?? []).map((t) => ({
               start: Date.parse(t.start) / 1000,
               end: Date.parse(t.stop) / 1000,
               title: t.title.trim(),
@@ -218,9 +321,12 @@ export default defineProvider({
           }
         } catch (e) {
           // Una tanda que falla no tira la guía entera.
-          log.warn("Guía incompleta:", String(e));
+          failed++;
+          log.warn(`guía: tanda ${n}/${batches} falló (${batch.length} canales sin guía): ${String(e)}`);
         }
       }
+      const total = Object.values(programs).reduce((sum, p) => sum + p.length, 0);
+      log.info(`guía: ${Object.keys(programs).length} canales con ${total} programas en ${ms(t0)}${failed ? ` · ${failed} tandas fallidas` : ""}`);
       return programs;
     },
   },

@@ -1,13 +1,13 @@
 {
   "version": 1,
-  "updatedAt": 1792346800,
+  "updatedAt": 1792434000,
   "featured": ["es.novatv.pluto-tv"],
   "collections": [],
   "plugins": [
     {
       "id": "es.novatv.pluto-tv",
       "name": "Pluto TV",
-      "version": "1.0.0",
+      "version": "1.1.0",
       "tagline": "Cientos de canales gratis, con su guía",
       "description": "Dibujos, anime, cine, series, MTV, realities y mucho más, gratis y legal con anuncios. Los canales llegan a la TV en directo de NOVA con su número y su guía de las próximas horas.\n\nEn los perfiles infantiles solo salen los canales infantiles. El anime cuenta como infantil o no según la opción del plugin, en Ajustes → Plugins.\n\nCada emisión se pide justo al sintonizar, firmada con una sesión que el plugin renueva solo. Pluto TV elige los canales según tu región.",
       "author": { "name": "NOVA TV", "verified": true, "url": "https://github.com/ivnovomi/nova-plugins" },
@@ -18,20 +18,25 @@
       "permissions": { "network": ["*.pluto.tv"], "channels": true, "guide": true },
       "changelog": [
         {
+          "version": "1.1.0",
+          "date": 1792434000,
+          "notes": ["Los canales vuelven a funcionar (necesita NOVA 0.3.1).", "La sesión se renueva sola aunque caduque en mitad de un directo.", "Registro detallado en Ajustes → Plugins → Registro."]
+        },
+        {
           "version": "1.0.0",
           "date": 1792346800,
           "notes": ["Pluto TV deja de venir integrado en NOVA y pasa a ser un plugin de la tienda.", "Categorías en español y en inglés, según la región.", "Opción para mostrar el anime en los perfiles infantiles."]
         }
       ],
       "languages": ["es", "en"],
-      "updatedAt": 1792346800,
-      "reviewedAt": 1792346800,
+      "updatedAt": 1792434000,
+      "reviewedAt": 1792434000,
       "tags": ["tv", "gratis", "infantil", "cine", "series"],
       "package": {
-        "url": "https://github.com/ivnovomi/nova-plugins/releases/download/es.novatv.pluto-tv-1.0.0/es.novatv.pluto-tv-1.0.0.novapkg",
-        "sha256": "9e9f6081b44d00d0ca9909f7c9c66b61cc45eb48f5dd38393c4c17971592784f",
-        "signature": "dW50cnVzdGVkIGNvbW1lbnQ6IHNpZ25hdHVyZSBmcm9tIHRhdXJpIHNlY3JldCBrZXkKUlVUbTAzNE96cXAyM2lzRnhWWFlGZFR0OUlBTkdtaERBUzNjR3lQMnBsYWlWRk55enZEemc4Yis5RTdvaFJubTd5cWZmRnJVVXBYczJ6NzBBRmpPOFE1NUlEdjNmK3MrVVFvPQp0cnVzdGVkIGNvbW1lbnQ6IHRpbWVzdGFtcDoxNzkyMzQ2NzQ5CWZpbGU6ZXMubm92YXR2LnBsdXRvLXR2LTEuMC4wLm5vdmFwa2cKem8rK0pZclVQMjFGYVUxVlVTVmFvQmh1WTRFeXJuY1h1cEFCR2U1QzJwMlY0c0hpUFNFZzFQYktwWXRiMENtYlF6Y0FmeFowcHVRdU45elcwWG1HQ3c9PQo=",
-        "size": 5337
+        "url": "https://github.com/ivnovomi/nova-plugins/releases/download/es.novatv.pluto-tv-1.1.0/es.novatv.pluto-tv-1.1.0.novapkg",
+        "sha256": "8019fa46eee581a096264ae96bf8343672c0222f68b4ecbc53ea3548b75363ad",
+        "signature": "dW50cnVzdGVkIGNvbW1lbnQ6IHNpZ25hdHVyZSBmcm9tIHRhdXJpIHNlY3JldCBrZXkKUlVUbTAzNE96cXAyM25aRlNTclRXMnJMWUpIaDlKd0FsNTV4K3BMVktIbHM1MU1JVGxxMXZvRlJQNWp1bjJNd0Q1cEhpY0Q2QjNCMHBHOHBmQktqcnFuZDBhR1YvQ1AzcWc0PQp0cnVzdGVkIGNvbW1lbnQ6IHRpbWVzdGFtcDoxNzkyNDMzOTE4CWZpbGU6ZXMubm92YXR2LnBsdXRvLXR2LTEuMS4wLm5vdmFwa2cKSXlFdEw1OGRENjZhZnNZYXlCZUZuNC95dTJqd1E0ckJlV2l0VGZyOThSQ3pSSzVWOHEzOVc4TG1WdXVBV1MrL0p6T3VtS1piVFZsMG4vN2RMZDdsQ1E9PQo=",
+        "size": 6772
       }
     }
   ]

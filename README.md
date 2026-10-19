@@ -8,7 +8,7 @@ Se instalan desde **NOVA → Tienda**.
 
 | Plugin | Qué aporta | Versión |
 |---|---|---|
-| [Pluto TV](plugins/es.novatv.pluto-tv) | Cientos de canales gratis con anuncios, con su guía | [1.0.0](https://github.com/ivnovomi/nova-plugins/releases/tag/es.novatv.pluto-tv-1.0.0) |
+| [Pluto TV](plugins/es.novatv.pluto-tv) | Cientos de canales gratis con anuncios, con su guía | [1.1.0](https://github.com/ivnovomi/nova-plugins/releases/tag/es.novatv.pluto-tv-1.1.0) |
 
 ## Qué hay aquí
 
